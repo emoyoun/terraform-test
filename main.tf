@@ -1,9 +1,10 @@
 # Managed by Watchdog
-# Current Commit: HEAD (auto-updated by workflow)
+# Current Upstream Version: 30.0.0
 
 module "gke" {
-  # We pull directly from the master branch of the GKE module
-  source = "git::https://github.com/terraform-google-modules/terraform-google-kubernetes-engine.git?ref=master"
+  source  = "terraform-google-modules/kubernetes-engine/google"
+  # The workflow will update this specific line
+  version = "30.0.0"
 
   project_id     = "my-audit-project"
   name           = "audit-cluster"
@@ -12,7 +13,5 @@ module "gke" {
   subnetwork     = "default"
   ip_range_pods  = "pods"
   ip_range_services = "services"
-  
-  # Minimal configuration to ensure 'terraform validate' passes
-  zones = ["us-central1-a"]
+  zones          = ["us-central1-a"]
 }

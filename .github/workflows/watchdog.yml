@@ -1,12 +1,12 @@
-name: "GKE Bleeding Edge Watchdog"
+name: "GKE Release Watchdog"
 
 on:
   schedule:
-    - cron: '0 9 * * *'
+    - cron: '0 9 * * *' # Checks every day at 9 AM UTC
   workflow_dispatch:
 
 jobs:
-  track-upstream-gke:
+  track-releases:
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -18,55 +18,63 @@ jobs:
           token: ${{ secrets.GH_PAT }}
           fetch-depth: 0
 
-      # 1. Get Latest GKE Commit SHA (Authenticated)
-      - name: Check GKE Master Branch
+      # 1. Get Latest Release Tag (Authenticated & Safe)
+      - name: Check Latest Release
         id: check
         env:
-          # We use the token here to bypass Rate Limits
           API_TOKEN: ${{ secrets.GH_PAT }}
         run: |
-          echo "Querying GitHub API..."
+          echo "Querying GitHub API for latest release..."
           
+          # We use the /releases/latest endpoint
           RESPONSE=$(curl -s -H "Authorization: token $API_TOKEN" \
-            https://api.github.com/repos/terraform-google-modules/terraform-google-kubernetes-engine/commits/master)
+            https://api.github.com/repos/terraform-google-modules/terraform-google-kubernetes-engine/releases/latest)
           
-          # Extract SHA
-          LATEST_SHA=$(echo $RESPONSE | jq -r .sha)
+          # Extract Tag (e.g., "v31.0.0")
+          LATEST_TAG=$(echo $RESPONSE | jq -r .tag_name)
           
-          # SAFETY CHECK: If SHA is null or empty, fail the build so we don't break main.tf
-          if [ "$LATEST_SHA" == "null" ] || [ -z "$LATEST_SHA" ]; then
-            echo "CRITICAL ERROR: API returned invalid data."
-            echo "Full API Response: $RESPONSE"
+          # CRITICAL SAFETY CHECK
+          if [ "$LATEST_TAG" == "null" ] || [ -z "$LATEST_TAG" ]; then
+            echo "❌ CRITICAL ERROR: API returned invalid data."
             exit 1
           fi
           
-          echo "✅ Latest Upstream SHA: $LATEST_SHA"
+          # Clean the version (remove 'v' if present: v30.0.0 -> 30.0.0)
+          CLEAN_VERSION=$(echo $LATEST_TAG | sed 's/v//')
           
-          # Check if we need to update
-          if grep -q "$LATEST_SHA" main.tf; then
-            echo "UPDATE_NEEDED=false" >> $GITHUB_ENV
-            echo "Status: Already up to date."
-          else
+          echo "✅ Latest Tag: $CLEAN_VERSION"
+          
+          # Check local version in main.tf
+          CURRENT_VERSION=$(grep 'version =' main.tf | cut -d '"' -f 2)
+          echo "Current Local: $CURRENT_VERSION"
+          
+          if [ "$CLEAN_VERSION" != "$CURRENT_VERSION" ]; then
             echo "UPDATE_NEEDED=true" >> $GITHUB_ENV
-            echo "NEW_SHA=$LATEST_SHA" >> $GITHUB_ENV
-            echo "Status: New commit found. Queuing update."
+            echo "NEW_VERSION=$CLEAN_VERSION" >> $GITHUB_ENV
+            echo "Status: Upgrade available."
+          else
+            echo "UPDATE_NEEDED=false" >> $GITHUB_ENV
+            echo "Status: Up to date."
           fi
 
-      # 2. Update main.tf (Self-Healing Regex)
-      - name: Update Source Ref
+      # 2. Update main.tf
+      - name: Update Version
         if: env.UPDATE_NEEDED == 'true'
         run: |
-          # This regex replaces '?ref=ANYTHING"' with the new SHA
-          # It fixes 'ref=null', 'ref=master', or 'ref=old-hash'
-          sed -i "s/?ref=[^\"]*\"/?ref=${{ env.NEW_SHA }}\"/" main.tf
+          # Robust regex to replace the version number inside quotes
+          sed -i "s/version = \".*\"/version = \"${{ env.NEW_VERSION }}\"/" main.tf
+          
+          # Optional: Update the comment header if it exists
+          sed -i "s/Current Upstream Version: .*/Current Upstream Version: ${{ env.NEW_VERSION }}/" main.tf
 
-      # 3. Validation (Mocked)
+      # 3. Validation
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
 
       - name: Terraform Validate
         if: env.UPDATE_NEEDED == 'true'
         run: |
+          # -upgrade downloads the new version from the registry
           terraform init -upgrade
           terraform validate
 
@@ -77,17 +85,19 @@ jobs:
           git config --global user.email "nada.abuzid@cloudonboard.ca"
           
           if [ "${{ env.UPDATE_NEEDED }}" == "true" ]; then
-            SHORT_SHA=$(echo ${{ env.NEW_SHA }} | cut -c1-7)
-            MSG="feat(gke): sync upstream module with dev branch ($SHORT_SHA)"
+            # Scenario A: Real Version Upgrade
+            MSG="feat(deps): upgrade gke module to v${{ env.NEW_VERSION }}"
             git add main.tf
             git commit -m "$MSG"
+            
           else
-            echo "$(date): Checked GKE upstream. No changes." >> activity_log.txt
-            MSGS=("chore: check gke master stability" "ci: daily kubernetes module scan" "test: verify upstream gke integrity")
+            # Scenario B: Daily Maintenance
+            echo "$(date): Checked releases. System stable." >> activity_log.txt
+            MSGS=("chore: daily release sync check" "ci: validate upstream release tags" "refactor: release stability scan")
             RANDOM_MSG=${MSGS[$RANDOM % ${#MSGS[@]}]}
             
             git add activity_log.txt
             git commit -m "$RANDOM_MSG [skip ci]"
           fi
           
-          git push      
+          git push
