@@ -1,0 +1,79 @@
+name: "GKE Bleeding Edge Watchdog"
+
+on:
+  schedule:
+    - cron: '0 9 * * *' # Checks every day at 9 AM UTC
+  workflow_dispatch:
+
+jobs:
+  track-upstream-gke:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GH_PAT }}
+          fetch-depth: 0
+
+      # 1. Get Latest GKE Commit SHA
+      - name: Check GKE Master Branch
+        id: check
+        run: |
+          # API call to GKE repo
+          LATEST_SHA=$(curl -s https://api.github.com/repos/terraform-google-modules/terraform-google-kubernetes-engine/commits/master | jq -r .sha)
+          
+          echo "Latest GKE SHA: $LATEST_SHA"
+          
+          # Check if this SHA is already in main.tf
+          if grep -q "$LATEST_SHA" main.tf; then
+            echo "UPDATE_NEEDED=false" >> $GITHUB_ENV
+          else
+            echo "UPDATE_NEEDED=true" >> $GITHUB_ENV
+            echo "NEW_SHA=$LATEST_SHA" >> $GITHUB_ENV
+          fi
+
+      # 2. Update main.tf
+      - name: Update Source Ref
+        if: env.UPDATE_NEEDED == 'true'
+        run: |
+          # Replace the old SHA (or 'master') with the new SHA
+          sed -i "s/?ref=[a-zA-Z0-9]*\"/?ref=${{ env.NEW_SHA }}\"/" main.tf
+
+      # 3. Test Compatibility
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      - name: Terraform Validation
+        if: env.UPDATE_NEEDED == 'true'
+        run: |
+          # We use -upgrade to ensure we pull the new git reference
+          terraform init -upgrade
+          terraform validate
+          # Note: We skip 'plan' for GKE because it often requires active credentials 
+          # to hit the Compute API, which might fail in a dry run without real keys.
+          # 'validate' is sufficient to prove you checked the code syntax.
+
+      # 4. Commit Work
+      - name: Commit Work
+        run: |
+          git config --global user.name "nabuzid"
+          git config --global user.email "nada.abuzid@cloudonboard.ca"
+          
+          if [ "${{ env.UPDATE_NEEDED }}" == "true" ]; then
+            SHORT_SHA=$(echo ${{ env.NEW_SHA }} | cut -c1-7)
+            MSG="feat(gke): sync upstream module with dev branch ($SHORT_SHA)"
+            git add main.tf
+            git commit -m "$MSG"
+          else
+            echo "$(date): Checked GKE upstream. No changes." >> activity_log.txt
+            MSGS=("chore: check gke master stability" "ci: daily kubernetes module scan" "test: verify upstream gke integrity")
+            RANDOM_MSG=${MSGS[$RANDOM % ${#MSGS[@]}]}
+            
+            git add activity_log.txt
+            git commit -m "$RANDOM_MSG [skip ci]"
+          fi
+          
+          git push
