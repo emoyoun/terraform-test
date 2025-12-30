@@ -71,7 +71,7 @@ jobs:
         uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: 1.5.7 # Optional: Pin a specific version if you want
-          
+
       # UPDATE & TEST
       - name: Apply & Test
         if: env.should_run == 'true'
@@ -87,8 +87,8 @@ jobs:
       - name: Commit & Push
         if: env.should_run == 'true'
         run: |
-          git config --global user.name "Your Name"
-          git config --global user.email "your-email@example.com"
+          git config --global user.name "nabuzid"
+          git config --global user.email "nada.abuzid@cloudonboard.ca"
           git add ${{ env.TARGET_DIR }}
           
           if [ "${{ env.UPDATE_NEEDED }}" == "true" ]; then
