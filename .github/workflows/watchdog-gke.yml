@@ -35,14 +35,14 @@ jobs:
           
           # CRITICAL SAFETY CHECK
           if [ "$LATEST_TAG" == "null" ] || [ -z "$LATEST_TAG" ]; then
-            echo "❌ CRITICAL ERROR: API returned invalid data."
+            echo "CRITICAL ERROR: API returned invalid data."
             exit 1
           fi
           
           # Clean the version (remove 'v' if present: v30.0.0 -> 30.0.0)
           CLEAN_VERSION=$(echo $LATEST_TAG | sed 's/v//')
           
-          echo "✅ Latest Tag: $CLEAN_VERSION"
+          echo "Latest Tag: $CLEAN_VERSION"
           
           # Check local version in main.tf
           CURRENT_VERSION=$(grep 'version =' main.tf | cut -d '"' -f 2)

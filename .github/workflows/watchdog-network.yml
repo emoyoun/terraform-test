@@ -2,7 +2,8 @@ name: "Watchdog: Network"
 
 on:
   schedule:
-    - cron: '15 8-22 * * *' # Random lottery check between 8am and 10pm
+    # Runs hourly from 14:00 UTC (9 AM EST) to 22:00 UTC (5 PM EST)
+    - cron: '15 14-22 * * *'
   workflow_dispatch:
 
 jobs:
@@ -25,12 +26,23 @@ jobs:
       - name: Hourly Lottery
         id: lottery
         run: |
-          SEED=$(sum <<< "${{ env.TARGET_DIR }}")
+          # 1. Generate clean integer seed using cksum (Fixes the "00094" error)
+          SEED=$(cksum <<< "${{ env.TARGET_DIR }}" | cut -d ' ' -f 1)
+          
+          # 2. Roll the die (1 in 8 chance)
           ROLL=$(( (RANDOM + SEED) % 8 ))
-          if [ $ROLL -eq 0 ] || [ $(date +%-H) -ge 22 ]; then
+          
+          # 3. Get Current Hour in UTC
+          CURRENT_HOUR=$(date +%-H)
+          
+          # 4. Logic: Win lottery OR Force run if it is 5 PM (22:00 UTC)
+          # We force it at the end of the day so you never miss a daily commit
+          if [ $ROLL -eq 0 ] || [ $CURRENT_HOUR -ge 22 ]; then
             echo "should_run=true" >> $GITHUB_ENV
+            echo "WINNER! It is either a lucky hour or end of day (5 PM)."
           else
             echo "should_run=false" >> $GITHUB_ENV
+            echo "No audit this hour. Keeping the repo quiet."
           fi
 
       # CHECK UPSTREAM
