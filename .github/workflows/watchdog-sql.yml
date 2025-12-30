@@ -66,6 +66,12 @@ jobs:
             echo "UPDATE_NEEDED=false" >> $GITHUB_ENV
           fi
 
+      - name: Setup Terraform
+        if: env.should_run == 'true'
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.5.7 # Optional: Pin a specific version if you want
+          
       # UPDATE & TEST
       - name: Apply & Test
         if: env.should_run == 'true'
