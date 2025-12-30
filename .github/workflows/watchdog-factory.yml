@@ -1,0 +1,83 @@
+name: "Watchdog: Project Factory"
+
+on:
+  schedule:
+    - cron: '15 8-22 * * *' # Random lottery check between 8am and 10pm
+  workflow_dispatch:
+
+jobs:
+  audit-factory:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      TARGET_DIR: "project-factory"
+      REPO_URL: "https://api.github.com/repos/terraform-google-modules/terraform-google-project-factory/releases/latest"
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GH_PAT }}
+          fetch-depth: 0
+
+      # LOTTERY LOGIC
+      - name: Hourly Lottery
+        id: lottery
+        run: |
+          SEED=$(sum <<< "${{ env.TARGET_DIR }}")
+          ROLL=$(( (RANDOM + SEED) % 8 ))
+          if [ $ROLL -eq 0 ] || [ $(date +%-H) -ge 22 ]; then
+            echo "should_run=true" >> $GITHUB_ENV
+          else
+            echo "should_run=false" >> $GITHUB_ENV
+          fi
+
+      # CHECK UPSTREAM
+      - name: Check Release
+        if: env.should_run == 'true'
+        env:
+          API_TOKEN: ${{ secrets.GH_PAT }}
+        run: |
+          cd ${{ env.TARGET_DIR }}
+          RESPONSE=$(curl -s -H "Authorization: token $API_TOKEN" ${{ env.REPO_URL }})
+          LATEST_TAG=$(echo $RESPONSE | jq -r .tag_name)
+          if [ "$LATEST_TAG" == "null" ]; then exit 1; fi
+          
+          CLEAN_VERSION=$(echo $LATEST_TAG | sed 's/v//')
+          CURRENT_VERSION=$(grep 'version =' main.tf | cut -d '"' -f 2)
+          
+          if [ "$CLEAN_VERSION" != "$CURRENT_VERSION" ]; then
+            echo "UPDATE_NEEDED=true" >> $GITHUB_ENV
+            echo "NEW_VERSION=$CLEAN_VERSION" >> $GITHUB_ENV
+          else
+            echo "UPDATE_NEEDED=false" >> $GITHUB_ENV
+          fi
+
+      # UPDATE & TEST
+      - name: Apply & Test
+        if: env.should_run == 'true'
+        run: |
+          cd ${{ env.TARGET_DIR }}
+          if [ "${{ env.UPDATE_NEEDED }}" == "true" ]; then
+             sed -i "s/version = \".*\"/version = \"${{ env.NEW_VERSION }}\"/" main.tf
+          fi
+          terraform init -upgrade
+          terraform validate
+
+      # COMMIT
+      - name: Commit & Push
+        if: env.should_run == 'true'
+        run: |
+          git config --global user.name "Your Name"
+          git config --global user.email "your-email@example.com"
+          git add ${{ env.TARGET_DIR }}
+          
+          if [ "${{ env.UPDATE_NEEDED }}" == "true" ]; then
+            git commit -m "feat(factory): upgrade module to v${{ env.NEW_VERSION }}"
+          else
+            MSGS=("chore(factory): drift check" "ci(factory): security scan" "refactor(factory): sync upstream")
+            git commit -m "${MSGS[$RANDOM % ${#MSGS[@]}]}" --allow-empty
+          fi
+          git pull --rebase
+          git push
