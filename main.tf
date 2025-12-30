@@ -1,10 +1,10 @@
 # Managed by Watchdog
-# Current Upstream Version: 30.0.0
+# Current Upstream Version: 42.0.0
 
 module "gke" {
   source  = "terraform-google-modules/kubernetes-engine/google"
   # The workflow will update this specific line
-  version = "30.0.0"
+  version = "42.0.0"
 
   project_id     = "my-audit-project"
   name           = "audit-cluster"
