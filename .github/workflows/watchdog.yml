@@ -2,7 +2,7 @@ name: "GKE Bleeding Edge Watchdog"
 
 on:
   schedule:
-    - cron: '0 9 * * *' # Checks every day at 9 AM UTC
+    - cron: '0 9 * * *'
   workflow_dispatch:
 
 jobs:
@@ -18,43 +18,57 @@ jobs:
           token: ${{ secrets.GH_PAT }}
           fetch-depth: 0
 
-      # 1. Get Latest GKE Commit SHA
+      # 1. Get Latest GKE Commit SHA (Authenticated)
       - name: Check GKE Master Branch
         id: check
+        env:
+          # We use the token here to bypass Rate Limits
+          API_TOKEN: ${{ secrets.GH_PAT }}
         run: |
-          # API call to GKE repo
-          LATEST_SHA=$(curl -s https://api.github.com/repos/terraform-google-modules/terraform-google-kubernetes-engine/commits/master | jq -r .sha)
+          echo "Querying GitHub API..."
           
-          echo "Latest GKE SHA: $LATEST_SHA"
+          RESPONSE=$(curl -s -H "Authorization: token $API_TOKEN" \
+            https://api.github.com/repos/terraform-google-modules/terraform-google-kubernetes-engine/commits/master)
           
-          # Check if this SHA is already in main.tf
+          # Extract SHA
+          LATEST_SHA=$(echo $RESPONSE | jq -r .sha)
+          
+          # SAFETY CHECK: If SHA is null or empty, fail the build so we don't break main.tf
+          if [ "$LATEST_SHA" == "null" ] || [ -z "$LATEST_SHA" ]; then
+            echo "CRITICAL ERROR: API returned invalid data."
+            echo "Full API Response: $RESPONSE"
+            exit 1
+          fi
+          
+          echo "✅ Latest Upstream SHA: $LATEST_SHA"
+          
+          # Check if we need to update
           if grep -q "$LATEST_SHA" main.tf; then
             echo "UPDATE_NEEDED=false" >> $GITHUB_ENV
+            echo "Status: Already up to date."
           else
             echo "UPDATE_NEEDED=true" >> $GITHUB_ENV
             echo "NEW_SHA=$LATEST_SHA" >> $GITHUB_ENV
+            echo "Status: New commit found. Queuing update."
           fi
 
-      # 2. Update main.tf
+      # 2. Update main.tf (Self-Healing Regex)
       - name: Update Source Ref
         if: env.UPDATE_NEEDED == 'true'
         run: |
-          # Replace the old SHA (or 'master') with the new SHA
-          sed -i "s/?ref=[a-zA-Z0-9]*\"/?ref=${{ env.NEW_SHA }}\"/" main.tf
+          # This regex replaces '?ref=ANYTHING"' with the new SHA
+          # It fixes 'ref=null', 'ref=master', or 'ref=old-hash'
+          sed -i "s/?ref=[^\"]*\"/?ref=${{ env.NEW_SHA }}\"/" main.tf
 
-      # 3. Test Compatibility
+      # 3. Validation (Mocked)
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
 
-      - name: Terraform Validation
+      - name: Terraform Validate
         if: env.UPDATE_NEEDED == 'true'
         run: |
-          # We use -upgrade to ensure we pull the new git reference
           terraform init -upgrade
           terraform validate
-          # Note: We skip 'plan' for GKE because it often requires active credentials 
-          # to hit the Compute API, which might fail in a dry run without real keys.
-          # 'validate' is sufficient to prove you checked the code syntax.
 
       # 4. Commit Work
       - name: Commit Work
@@ -76,4 +90,4 @@ jobs:
             git commit -m "$RANDOM_MSG [skip ci]"
           fi
           
-          git push
+          git push      
