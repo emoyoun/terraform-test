@@ -89,6 +89,16 @@ jobs:
         run: |
           git config --global user.name "nabuzid"
           git config --global user.email "nada.abuzid@cloudonboard.ca"
+
+          # --- THE FIX ---
+          # 1. Kill the heavy binaries (Solves the "File too large" crash)
+          rm -rf ${{ env.TARGET_DIR }}/.terraform
+          rm -rf ${{ env.TARGET_DIR }}/.terraform.lock.h
+          
+          # 2. Kill any cached git folders (Solves the "Embedded repo" warning)
+          rm -rf ${{ env.TARGET_DIR }}/.git
+          # ---------------
+          
           git add ${{ env.TARGET_DIR }}
           
           if [ "${{ env.UPDATE_NEEDED }}" == "true" ]; then
