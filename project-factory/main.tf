@@ -3,7 +3,7 @@
 
 module "project-factory" {
   source  = "terraform-google-modules/project-factory/google"
-  version = "14.4.0"
+  version = "18.2.0"
 
   name              = "audit-factory-project"
   random_project_id = true
