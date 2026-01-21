@@ -3,7 +3,7 @@
 
 module "instance_template" {
   source  = "terraform-google-modules/vm/google//modules/instance_template"
-  version = "14.3.0"
+  version = "14.3.1"
 
   region          = "us-central1"
   project_id      = "audit-project"
