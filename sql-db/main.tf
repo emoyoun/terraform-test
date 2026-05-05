@@ -3,10 +3,10 @@
 
 module "sql-db" {
   source  = "terraform-google-modules/sql-db/google//modules/mysql"
-  version = "28.0.1"
+  version = "28.1.0"
 
   name             = "audit-sql"
-  database_version = "28.0.1"
+  database_version = "28.1.0"
   project_id       = "audit-project"
   zone             = "us-central1-a"
   region           = "us-central1"
