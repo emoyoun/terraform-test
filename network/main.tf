@@ -3,7 +3,7 @@
 
 module "vpc" {
   source  = "terraform-google-modules/network/google"
-  version = "18.2.0"
+  version = "18.3.0"
 
   project_id   = "audit-project"
   network_name = "audit-vpc"
