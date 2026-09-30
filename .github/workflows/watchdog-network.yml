@@ -26,22 +26,9 @@ jobs:
       - name: Hourly Lottery
         id: lottery
         run: |
-          if [ "${{ github.event_name }}" == "schedule" ]; then
-            # Skip weekends (backup for cron 1-5)
-            DOW=$(date -u +%u)
-            if [ "$DOW" -ge 6 ]; then
-              echo "should_run=false" >> "$GITHUB_ENV"
-              echo "Weekend. Skipping."
-              exit 0
-            fi
-
-            # Skip ~30% of weekdays; same answer every hour today
-            DAY_SEED=$(date -u +%Y-%m-%d | cksum | cut -d ' ' -f 1)
-            if [ $(( DAY_SEED % 10 )) -lt 3 ]; then
-              echo "should_run=false" >> "$GITHUB_ENV"
-              echo "Random off-day. Skipping this weekday."
-              exit 0
-            fi
+          SHOULD_RUN=$(bash .github/scripts/weekday-gate.sh env | tail -1)
+          if [ "$SHOULD_RUN" != "true" ]; then
+            exit 0
           fi
 
           # 1. Generate clean integer seed using cksum (Fixes the "00094" error)

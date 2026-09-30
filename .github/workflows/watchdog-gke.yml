@@ -12,24 +12,12 @@ jobs:
     outputs:
       should_run: ${{ steps.gate.outputs.should_run }}
     steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
       - name: Decide whether to run
         id: gate
-        run: |
-          if [ "${{ github.event_name }}" != "schedule" ]; then
-            echo "should_run=true" >> "$GITHUB_OUTPUT"
-            echo "Manual run. Proceeding."
-            exit 0
-          fi
-
-          # Skip ~30% of weekdays so a few work days are randomly off
-          DAY_SEED=$(date -u +%Y-%m-%d | cksum | cut -d ' ' -f 1)
-          if [ $(( DAY_SEED % 10 )) -lt 3 ]; then
-            echo "should_run=false" >> "$GITHUB_OUTPUT"
-            echo "Random off-day. Skipping this weekday."
-          else
-            echo "should_run=true" >> "$GITHUB_OUTPUT"
-            echo "Weekday check will run."
-          fi
+        run: bash .github/scripts/weekday-gate.sh output
 
   track-releases:
     needs: schedule-gate
