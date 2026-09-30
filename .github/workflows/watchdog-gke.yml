@@ -2,11 +2,38 @@ name: "GKE Release Watchdog"
 
 on:
   schedule:
-    - cron: '0 9 * * *' # Checks every day at 9 AM UTC
+    # Weekdays only (Mon-Fri) at 9 AM UTC
+    - cron: '0 9 * * 1-5'
   workflow_dispatch:
 
 jobs:
+  schedule-gate:
+    runs-on: ubuntu-latest
+    outputs:
+      should_run: ${{ steps.gate.outputs.should_run }}
+    steps:
+      - name: Decide whether to run
+        id: gate
+        run: |
+          if [ "${{ github.event_name }}" != "schedule" ]; then
+            echo "should_run=true" >> "$GITHUB_OUTPUT"
+            echo "Manual run. Proceeding."
+            exit 0
+          fi
+
+          # Skip ~30% of weekdays so a few work days are randomly off
+          DAY_SEED=$(date -u +%Y-%m-%d | cksum | cut -d ' ' -f 1)
+          if [ $(( DAY_SEED % 10 )) -lt 3 ]; then
+            echo "should_run=false" >> "$GITHUB_OUTPUT"
+            echo "Random off-day. Skipping this weekday."
+          else
+            echo "should_run=true" >> "$GITHUB_OUTPUT"
+            echo "Weekday check will run."
+          fi
+
   track-releases:
+    needs: schedule-gate
+    if: needs.schedule-gate.outputs.should_run == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: write

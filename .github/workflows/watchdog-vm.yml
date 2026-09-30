@@ -2,8 +2,8 @@ name: "Watchdog: Compute VM"
 
 on:
   schedule:
-    # Runs hourly from 14:00 UTC (9 AM EST) to 22:00 UTC (5 PM EST)
-    - cron: '15 14-22 * * *'
+    # Weekdays only (Mon-Fri), hourly from 14:00 UTC (9 AM EST) to 22:00 UTC (5 PM EST)
+    - cron: '15 14-22 * * 1-5'
   workflow_dispatch:
 
 jobs:
@@ -26,6 +26,24 @@ jobs:
       - name: Hourly Lottery
         id: lottery
         run: |
+          if [ "${{ github.event_name }}" == "schedule" ]; then
+            # Skip weekends (backup for cron 1-5)
+            DOW=$(date -u +%u)
+            if [ "$DOW" -ge 6 ]; then
+              echo "should_run=false" >> "$GITHUB_ENV"
+              echo "Weekend. Skipping."
+              exit 0
+            fi
+
+            # Skip ~30% of weekdays; same answer every hour today
+            DAY_SEED=$(date -u +%Y-%m-%d | cksum | cut -d ' ' -f 1)
+            if [ $(( DAY_SEED % 10 )) -lt 3 ]; then
+              echo "should_run=false" >> "$GITHUB_ENV"
+              echo "Random off-day. Skipping this weekday."
+              exit 0
+            fi
+          fi
+
           # 1. Generate clean integer seed using cksum (Fixes the "00094" error)
           SEED=$(cksum <<< "${{ env.TARGET_DIR }}" | cut -d ' ' -f 1)
           
@@ -36,7 +54,6 @@ jobs:
           CURRENT_HOUR=$(date +%-H)
           
           # 4. Logic: Win lottery OR Force run if it is 5 PM (22:00 UTC)
-          # We force it at the end of the day so you never miss a daily commit
           if [ $ROLL -eq 0 ] || [ $CURRENT_HOUR -ge 22 ]; then
             echo "should_run=true" >> $GITHUB_ENV
             echo "WINNER! It is either a lucky hour or end of day (5 PM)."
